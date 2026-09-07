@@ -14,8 +14,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Pinned to the commit the upstream "Upload Python Package" run was
+      # built from, not to whatever the default branch holds when this run
+      # starts. Without `ref`, checkout takes the branch tip: a merge landing
+      # between the two runs would build this image from a tree that never
+      # produced the wheel being installed. The Dockerfile and build context
+      # come from here, so they must match the release being published.
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Resolve release version from the PyPI workflow tag
         id: release
@@ -27,6 +35,14 @@ jobs:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           VERSION="${HEAD_BRANCH#v}"
+          # `head_branch` is whatever ref started the upstream run. On a release
+          # that is the tag, but nothing guarantees it: a branch name would sail
+          # through and get published as an image tag. The UI workflow already
+          # refuses anything that is not a version; the core one did not.
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([abrc.dev+-][0-9A-Za-z.+-]*)?$ ]]; then
+            echo "::error::refusing to publish an image tagged '${VERSION}' -- expected a version like 1.2.3, got the upstream ref '${HEAD_BRANCH}'"
+            exit 1
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
