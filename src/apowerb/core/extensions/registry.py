@@ -96,6 +96,7 @@ class ExtensionRegistry:
         # l'ecran peut ne pas etre installe, le noyau ne devine pas.
         self._supervision_link: Callable[..., str] | None = None
         self._run_guards: list[Callable[..., Any]] = []
+        self._default_llm_cap: Callable[..., Any] | None = None
         self._model_observers: list[Callable[..., Any]] = []
         self._bootstrap_hooks: list[Callable[[], Any]] = []
         self._feature_flags: dict[str, Callable[[], Any]] = {}
@@ -156,6 +157,20 @@ class ExtensionRegistry:
 
     def run_guards(self) -> list[Callable[..., Any]]:
         return list(self._run_guards)
+
+    # -- plafond du modele mutualise ----------------------------------------
+    # Le noyau COMPTE la consommation de « thaink2/default » (colonne
+    # ``llm_usage.billed_to_thaink2``) et la sert a la jauge ; il ne la
+    # plafonne pas. Une brique fournit le plafond mensuel en jetons --
+    # ``async fn(db, *, owner_id, plan) -> int | None`` (None = illimite) --
+    # et la jauge affiche alors une limite, un reste, une alerte. Sans
+    # brique, elle ne montre qu'un compteur : l'OSS ne nomme que ce qu'il
+    # contient.
+    def register_default_llm_cap(self, fn: Callable[..., Any]) -> None:
+        self._default_llm_cap = fn
+
+    def default_llm_cap(self) -> Callable[..., Any] | None:
+        return self._default_llm_cap
 
     # -- observateurs de reponse LLM ----------------------------------------
     # Une fabrique ``(**contexte) -> callback | None`` appelee a la
