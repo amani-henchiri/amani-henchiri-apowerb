@@ -24,10 +24,21 @@ COPY pyproject.toml uv.lock ./
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
     && /root/.local/bin/uv venv /opt/venv \
     && VIRTUAL_ENV=/opt/venv /root/.local/bin/uv sync --no-dev --no-install-project \
+    # `[otel]` pulls th2pulse, which is what bridges application log records to
+    # the collector. Without it apowerb.configs.observability finds no th2pulse,
+    # logs a warning naming the missing extra, and the Logging screen stays empty
+    # however the deployment is configured -- measured on the published 0.2.9
+    # image, 2026-09-07. The extra is declared in pyproject.toml but was never
+    # installed here.
+    #
+    # `uv` is required, not incidental: apowerb's own dependency set has a
+    # pre-existing fsspec conflict between `pins` and `s3fs` that makes plain
+    # `pip install apowerb` unresolvable, with or without this extra. uv resolves
+    # it. Do not swap this line for pip.
     && if [ -z "${APPOWERB_VERSION}" ]; then \
-        VIRTUAL_ENV=/opt/venv /root/.local/bin/uv pip install --no-cache-dir apowerb; \
+        VIRTUAL_ENV=/opt/venv /root/.local/bin/uv pip install --no-cache-dir "apowerb[otel]"; \
     else \
-        VIRTUAL_ENV=/opt/venv /root/.local/bin/uv pip install --no-cache-dir "apowerb==${APPOWERB_VERSION}"; \
+        VIRTUAL_ENV=/opt/venv /root/.local/bin/uv pip install --no-cache-dir "apowerb[otel]==${APPOWERB_VERSION}"; \
     fi
 
 FROM python:3.13-slim AS runtime
