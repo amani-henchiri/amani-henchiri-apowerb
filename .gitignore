@@ -47,3 +47,7 @@ tools.dynamic.yaml
 artifacts_store/
 temp/
 tools.merged.yaml
+
+# Brouillons de corps de PR deposes dans le worktree pour .
+# Un  en a deja emporte un jusqu-a main le 08/09/2026.
+.pr-body.md
