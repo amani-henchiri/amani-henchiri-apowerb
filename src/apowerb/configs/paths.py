@@ -50,6 +50,11 @@ def artifacts_store_dir() -> Path:
     return _resolve(get_settings().artifacts_store_dir, "artifacts_store")
 
 
+def bi_store_dir() -> Path:
+    """Dossier des fichiers BI importes quand S3 n'est pas configure (``BI_STORE_DIR``)."""
+    return _resolve(get_settings().bi_store_dir, "bi_store")
+
+
 def uploads_dir() -> Path:
     """Dossier des fichiers uploadés (``UPLOADS_DIR``).
 

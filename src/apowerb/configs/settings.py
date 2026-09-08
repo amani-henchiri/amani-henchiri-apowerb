@@ -726,6 +726,10 @@ class Settings(BaseSettings):
     agents_pool_dir: str = "agents_pool"
     artifacts_store_dir: str = "artifacts_store"
     uploads_dir: str = "uploads"
+    # Fichiers BI (CSV/Excel importes) quand S3 n'est pas configure : un
+    # dossier local, sous la racine runtime. Farid 08/09/26 : « local directory
+    # (par defaut) avec possibilite de configurer S3 ».
+    bi_store_dir: str = "bi_store"
     toolbox_dir: str = ""  # vide => runtime_root
 
     @model_validator(mode="after")
