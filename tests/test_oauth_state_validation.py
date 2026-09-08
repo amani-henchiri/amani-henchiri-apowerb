@@ -118,7 +118,7 @@ def store():
 
 
 @pytest.fixture()
-def app_with_overrides(store):
+def app_with_overrides(store, monkeypatch):
     """Build a FastAPI app mounting the integrations router with stubs."""
     from apowerb.routers import integrations as integrations_module
     from apowerb.auth.dependencies import get_current_user
@@ -128,6 +128,11 @@ def app_with_overrides(store):
     # The router module is expected to expose the store via a module-level
     # attribute so tests can swap it out.
     integrations_module.oauth_state_store = store  # type: ignore[attr-defined]
+    # These tests prove state persistence and validation, not configuration:
+    # the NOT_CONFIGURED guard (proven in test_setup_status) would answer 503
+    # here, since the test environment names no OAuth client. Stubbed like
+    # the store above.
+    monkeypatch.setattr(integrations_module, "require_configured", lambda key: None)
 
     app = FastAPI()
     app.include_router(integrations_module.router, prefix="/api")
