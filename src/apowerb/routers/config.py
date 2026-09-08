@@ -12,7 +12,9 @@ from apowerb.core.agent_helpers.default_llm_usage import (
     DefaultLlmUsage,
     default_llm_usage,
 )
+from apowerb.core.setup_status import SetupStatus, setup_status
 from apowerb.core.extensions.registry import registry as _registry
+from apowerb.helpers.ownership import is_admin
 from apowerb.helpers.database import get_db
 from apowerb.users import schemas as user_schemas
 
@@ -50,3 +52,17 @@ async def get_default_llm_usage(
     return await default_llm_usage(
         db, owner_id=current_user.email, plan=current_user.plan
     )
+
+
+@router.get("/config/setup", response_model=SetupStatus)
+async def get_setup_status(
+    current_user: user_schemas.User = Depends(get_current_user),
+) -> SetupStatus:
+    """Which features are configured on this server, and -- for an
+    administrator -- which variables are still missing. Never a value.
+
+    Everyone authenticated sees the flags: that is what lets a screen say
+    « not configured yet, contact your administrator » instead of failing.
+    Only an administrator sees the variable names, since fixing it is theirs.
+    """
+    return setup_status(for_admin=is_admin(current_user))

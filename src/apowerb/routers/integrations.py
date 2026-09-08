@@ -1,4 +1,4 @@
-import secrets
+from apowerb.core.setup_status import require_configured
 from logging import getLogger
 
 import httpx
@@ -16,7 +16,6 @@ from apowerb.integrations.microsoft import (
     MicrosoftIntegrationService,
     SUPPORTED_MICROSOFT_SERVICES,
     IntegrationTokenExpiredError,
-    is_access_token_expired,
 )
 from apowerb.integrations.google import GoogleIntegrationService, GOOGLE_SERVICES
 from apowerb.integrations import odoo as odoo_integration
@@ -306,6 +305,7 @@ async def microsoft_service_connect(
         service: One of 'outlook', 'teams', 'sharepoint', 'onedrive'.
                  Determines which Graph API scopes are requested.
     """
+    require_configured("microsoft_integration")
     service = _validate_microsoft_service(service)
     state = await oauth_state_store.create(
         db=db,
@@ -451,7 +451,8 @@ async def debug_outlook_token_scopes(
 
     Auto-refreshes if the token is expired.
     """
-    import base64, json
+    import base64
+    import json
     try:
         access_token = await MicrosoftIntegrationService.get_valid_access_token(
             db, current_user.user_id, service="outlook",
@@ -660,6 +661,7 @@ async def google_connect(
                  "google_sheets", "google_docs".
         redirect_uri: Optional override for the callback URL.
     """
+    require_configured("google_integration")
     if service not in GOOGLE_SERVICES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -823,7 +825,6 @@ async def list_integrations(
     )
     integrations = result.scalars().all()
 
-    from apowerb.helpers.encryptor import decrypt_value
 
     def _status(integ: Integration) -> str:
         # An integration is active as long as we hold a refresh_token.

@@ -8,6 +8,7 @@ Endpoints allow a user to:
 
 import secrets
 import time
+from apowerb.core.setup_status import not_configured
 from logging import getLogger
 from urllib.parse import urlencode
 
@@ -123,12 +124,11 @@ async def get_auth_url(
 ):
     """Generate the Microsoft OAuth consent URL for Outlook Mail access."""
     if not settings.microsoft_integration_client_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                "Outlook Mail OAuth is not configured "
-                "(missing MICROSOFT_INTEGRATION_CLIENT_ID)."
-            ),
+        # A 503 the front recognises (NOT_CONFIGURED), not a 500: nothing is
+        # broken, the feature is simply not set up on this server.
+        raise not_configured(
+            "microsoft_integration",
+            "Outlook Mail OAuth is not configured (missing MICROSOFT_INTEGRATION_CLIENT_ID).",
         )
 
     tenant = settings.microsoft_integration_tenant_id or "common"
