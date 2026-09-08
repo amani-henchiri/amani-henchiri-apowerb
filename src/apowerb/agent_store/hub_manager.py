@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from apowerb.helpers.database_connection import DBConfig
 
 from sqlalchemy import (
-    create_engine,
     Table,
     Column,
     Integer,
@@ -12,6 +11,7 @@ from sqlalchemy import (
     MetaData,
     inspect,
 )
+from apowerb.helpers.sync_engine import create_sync_engine
 from apowerb.configs.settings import get_settings
 
 logger = setup_logging(__name__)
@@ -43,7 +43,7 @@ class HubStore(BaseModel):
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        self.engine = create_engine(
+        self.engine = create_sync_engine(
             f"{self.db_type}://{self.db_user}:{self.db_password}@{self.db_url}"
         )
         self.metadata = MetaData(schema=self.db_schema)

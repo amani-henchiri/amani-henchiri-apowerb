@@ -2,7 +2,6 @@ from typing import Any
 from apowerb.configs.th2logger import setup_logging
 from pydantic import BaseModel
 from sqlalchemy import (
-    create_engine,
     Table,
     Column,
     Integer,
@@ -11,6 +10,7 @@ from sqlalchemy import (
     inspect,
     UniqueConstraint,
 )
+from apowerb.helpers.sync_engine import create_sync_engine
 from apowerb.helpers.database_connection import DBConfig
 from apowerb.configs.settings import get_settings
 
@@ -42,7 +42,7 @@ class ToolConfigStore(BaseModel):
     db_password: str = tool_config.db_password
     db_type: str = tool_config.db_type
     db_schema: str = tool_config.db_schema
-    engine: Any = create_engine(
+    engine: Any = create_sync_engine(
         f"{db_type}://{db_user}:{db_password}@{db_url}?sslmode={settings.db_sslmode}"
     )
     metadata: Any = MetaData()

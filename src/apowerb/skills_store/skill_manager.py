@@ -2,7 +2,6 @@ from typing import Any
 from apowerb.configs.th2logger import setup_logging
 from pydantic import BaseModel
 from sqlalchemy import (
-    create_engine,
     Table,
     Column,
     Integer,
@@ -11,6 +10,7 @@ from sqlalchemy import (
     inspect,
     UniqueConstraint,
 )
+from apowerb.helpers.sync_engine import create_sync_engine
 from apowerb.helpers.database_connection import DBConfig
 from apowerb.configs.settings import get_settings
 
@@ -43,7 +43,7 @@ class SkillStore(BaseModel):
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        self.engine = create_engine(
+        self.engine = create_sync_engine(
             f"{self.db_type}://{self.db_user}:{self.db_password}@{self.db_url}"
         )
         self.metadata = MetaData(schema=self.db_schema)
