@@ -716,7 +716,7 @@ class Settings(BaseSettings):
     # th2agent ne fonctionnait que lancé depuis la racine du repo.
     # Les défauts ci-dessous reproduisent exactement l'ancien
     # comportement (racine = CWD) ; un consommateur externe pose
-    # TH2AGENT_RUNTIME_ROOT (ou les chemins un par un) et n'a plus
+    # RUNTIME_ROOT (ou les chemins un par un) et n'a plus
     # aucune contrainte sur son répertoire courant.
     #
     # Ces réglages ne concernent que le disque : les clés S3 gardent

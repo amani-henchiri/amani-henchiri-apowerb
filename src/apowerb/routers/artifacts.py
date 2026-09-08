@@ -33,7 +33,7 @@ def _artifacts_dir() -> str:
     C'était une constante de module (``os.path.abspath("artifacts_store")``),
     donc doublement fausse depuis que le chemin est configurable : elle figeait
     le répertoire courant au moment de l'import, et ignorait
-    ``ARTIFACTS_STORE_DIR`` / ``TH2AGENT_RUNTIME_ROOT``. ADK écrivait alors les
+    ``ARTIFACTS_STORE_DIR`` / ``RUNTIME_ROOT``. ADK écrivait alors les
     artefacts à l'endroit configuré pendant que cet endpoint les cherchait dans
     le CWD — et répondait une liste vide, sans erreur.
 

@@ -9,7 +9,7 @@ dans son propre CWD, ou avec des agents introuvables.
 Les valeurs par défaut reproduisent exactement l'ancien comportement (racine =
 CWD, mêmes noms de dossiers), donc les déploiements existants — qui lancent
 uvicorn depuis ``WORKDIR`` — ne changent pas d'un octet. Pour découpler, on pose
-``TH2AGENT_RUNTIME_ROOT`` ou l'un des chemins individuels.
+``RUNTIME_ROOT`` ou l'un des chemins individuels.
 
 Portée réelle, à jour : ``agents_pool``, ``artifacts_store``, ``uploads`` et la
 toolbox sont entièrement câblés — tous leurs accès disque passent par ici. Le
@@ -29,7 +29,15 @@ from apowerb.configs.settings import get_settings
 
 
 def runtime_root() -> Path:
-    """Racine des données runtime. ``TH2AGENT_RUNTIME_ROOT``, sinon le CWD."""
+    """Racine des données runtime. ``RUNTIME_ROOT``, sinon le CWD.
+
+    Le nom de la variable est bien ``RUNTIME_ROOT`` : ``Settings`` n'a pas de
+    préfixe d'environnement, donc le champ ``runtime_root`` se pose sous ce
+    nom-là. Ce module a annoncé ``TH2AGENT_RUNTIME_ROOT`` jusqu'au 08/09/26 --
+    un nom que rien ne lit, et qui a fait poser la mauvaise variable dans un
+    déploiement Kubernetes. ``test_runtime_root_env_var`` le vérifie désormais
+    par le comportement, pas par la relecture d'une docstring.
+    """
     configured = get_settings().runtime_root
     return Path(configured).expanduser() if configured else Path.cwd()
 
