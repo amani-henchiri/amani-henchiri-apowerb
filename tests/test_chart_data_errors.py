@@ -44,6 +44,123 @@ class TestAgentParseResponse:
             self._parse({"response": "Sorry, I could not run that query."})
 
 
+class TestAgentParseGeminiEvents:
+    """ADK events carry Gemini 2.5 *thought* parts alongside the answer.
+
+    Prod symptom (08/09, chart 0db64b90): the executor took the FIRST part
+    holding text, which for a thinking model is the reasoning summary
+    ("**My Current Line of Reasoning**..."). The real answer sitting in the
+    next part was never looked at, and the chart 502'd on an agent that had
+    in fact answered.
+    """
+
+    def _parse(self, result):
+        from apowerb.bi.data.agent_executor import AgentQueryExecutor
+
+        return AgentQueryExecutor._parse_response(result)
+
+    def test_thought_part_is_not_the_answer(self):
+        events = [
+            {
+                "modelVersion": "gemini-2.5-flash",
+                "content": {
+                    "parts": [
+                        {
+                            "text": "**My Current Line of Reasoning**\n\nOkay, so...",
+                            "thought": True,
+                        },
+                        {"text": '[{"region": "EU", "total": 3}]'},
+                    ]
+                },
+            }
+        ]
+        assert self._parse(events) == [{"region": "EU", "total": 3}]
+
+    def test_answer_in_earlier_event_is_still_found(self):
+        # The final event is a thought-only wrap-up; the rows came before it.
+        events = [
+            {"content": {"parts": [{"text": '[{"a": 1}]'}]}},
+            {"content": {"parts": [{"text": "Reflecting on it.", "thought": True}]}},
+        ]
+        assert self._parse(events) == [{"a": 1}]
+
+    def test_fenced_json_inside_an_event(self):
+        events = [
+            {
+                "content": {
+                    "parts": [{"text": 'Here you go:\n```json\n[{"x": 9}]\n```'}]
+                }
+            }
+        ]
+        assert self._parse(events) == [{"x": 9}]
+
+    def test_only_thoughts_reports_the_missing_instruction(self):
+        events = [
+            {
+                "content": {
+                    "parts": [
+                        {"text": "I do not know what data is wanted.", "thought": True}
+                    ]
+                }
+            }
+        ]
+        with pytest.raises(ValueError) as exc:
+            self._parse(events)
+        # The message must point at the fixable cause, not just quote the model.
+        assert "source_options" in str(exc.value)
+
+    def test_error_names_the_agent_when_known(self):
+        from apowerb.bi.data.agent_executor import AgentQueryExecutor
+
+        with pytest.raises(ValueError) as exc:
+            AgentQueryExecutor._parse_response(
+                {"response": "Sorry, I could not run that query."},
+                agent_name="sales_bot",
+            )
+        assert "sales_bot" in str(exc.value)
+
+
+class TestAgentPromptContract:
+    """Without an instruction the agent is asked for "the latest data" -- a
+    question no agent can answer. The fallback must at least state the output
+    contract, and an instruction carried by the chart must win over it."""
+
+    def _message(self, source):
+        from apowerb.bi.data.agent_executor import AgentQueryExecutor
+
+        return AgentQueryExecutor._message_for(source)
+
+    def test_source_options_message_wins(self):
+        from apowerb.bi.charts.core import DataSource, SourceType
+
+        src = DataSource(
+            source_type=SourceType.AGENT,
+            query="",
+            source_options={"agent_ids": [1], "message": "Monthly revenue by region"},
+        )
+        assert self._message(src) == "Monthly revenue by region"
+
+    def test_query_used_when_no_message(self):
+        from apowerb.bi.charts.core import DataSource, SourceType
+
+        src = DataSource(
+            source_type=SourceType.AGENT,
+            query="Top 10 clients",
+            source_options={"agent_ids": [1]},
+        )
+        assert self._message(src) == "Top 10 clients"
+
+    def test_fallback_states_the_json_only_contract(self):
+        from apowerb.bi.charts.core import DataSource, SourceType
+
+        src = DataSource(
+            source_type=SourceType.AGENT, query="", source_options={"agent_ids": [1]}
+        )
+        msg = self._message(src)
+        assert "JSON" in msg
+        assert "only" in msg.lower()
+
+
 # ---------------------------------------------------------------------------
 # Router maps QueryExecutionError -> 502
 # ---------------------------------------------------------------------------

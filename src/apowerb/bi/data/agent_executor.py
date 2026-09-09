@@ -59,10 +59,7 @@ class AgentQueryExecutor:
 
             agent_name = get_agent_folder_name(agent_info["agent_name"])
             session_id = f"bi-agent-{uuid.uuid4().hex[:12]}"
-            message_text = source.source_options.get(
-                "message",
-                source.query or "Return the latest data as a JSON array of objects.",
-            )
+            message_text = self._message_for(source)
             new_message = {"role": "user", "parts": [{"text": message_text}]}
 
             try:
@@ -94,72 +91,121 @@ class AgentQueryExecutor:
                 continue
 
             logger.info("[AGENT_EXECUTOR] Raw result type=%s, preview=%s", type(result).__name__, str(result)[:500])
-            rows = self._parse_response(result)
+            rows = self._parse_response(result, agent_name=agent_name)
             all_rows.extend(rows)
 
         return all_rows
 
-    @staticmethod
-    def _parse_response(result: Any) -> list[dict[str, Any]]:
-        """Extract JSON rows from the agent response text."""
-        # /api/adk/run may return a list of event dicts or a single dict
-        if isinstance(result, list):
-            # Extract text from the last event that has content
-            text = ""
-            for event in reversed(result):
-                if isinstance(event, dict):
-                    for key in ("response", "text", "content"):
-                        val = event.get(key, "")
-                        if val:
-                            text = val
-                            break
-                    # ADK events may nest content in parts
-                    parts = event.get("content", {}).get("parts", []) if isinstance(event.get("content"), dict) else []
-                    for p in parts:
-                        if isinstance(p, dict) and p.get("text"):
-                            text = p["text"]
-                            break
-                if text:
-                    break
-        elif isinstance(result, dict):
-            text = result.get("response", "") or result.get("text", "") or ""
-        else:
-            text = str(result) if result else ""
-        if not text:
-            return []
+    # An agent chart with no instruction is asked for "the latest data" and
+    # nothing else -- a question no agent can answer. Stating the output
+    # contract at least makes the failure the user's to fix, not a mystery.
+    _FALLBACK_MESSAGE = (
+        "Reply with ONLY a JSON array of objects -- no prose, no explanation, "
+        "no code fence. Each object is one row of the data this chart shows."
+    )
 
-        # Try parsing the full text as JSON
-        try:
-            data = json.loads(text)
+    @classmethod
+    def _message_for(cls, source: DataSource) -> str:
+        """What to ask the agent: the chart's own instruction, or the contract."""
+        message = source.source_options.get("message") or source.query
+        return message.strip() if isinstance(message, str) and message.strip() else cls._FALLBACK_MESSAGE
+
+    @staticmethod
+    def _answer_texts(result: Any) -> tuple[list[str], list[str]]:
+        """Candidate answer texts, most recent first, reasoning excluded.
+
+        ADK returns a list of events; a Gemini 2.5 event holds its reasoning
+        summary in parts flagged ``thought`` and the actual answer in a plain
+        part. Reading the first part with text hands back the monologue --
+        that is the 08/09 bug. ``routers/adk_runner.get_session_history``
+        already makes this distinction; this path had not.
+        """
+        texts: list[str] = []
+        thoughts: list[str] = []
+
+        def push(into: list[str], value: Any) -> None:
+            if isinstance(value, str) and value.strip():
+                into.append(value)
+
+        if isinstance(result, list):
+            for event in reversed(result):
+                if not isinstance(event, dict):
+                    continue
+                content = event.get("content")
+                parts = content.get("parts", []) if isinstance(content, dict) else []
+                answer = ""
+                for part in parts:
+                    if not isinstance(part, dict) or not isinstance(part.get("text"), str):
+                        continue
+                    if part.get("thought"):
+                        push(thoughts, part["text"])
+                    else:
+                        answer += part["text"]
+                push(texts, answer)
+                push(texts, event.get("response"))
+                push(texts, event.get("text"))
+        elif isinstance(result, dict):
+            push(texts, result.get("response"))
+            push(texts, result.get("text"))
+        elif result:
+            push(texts, str(result))
+
+        return texts, thoughts
+
+    @staticmethod
+    def _rows_from_text(text: str) -> list[dict[str, Any]] | None:
+        """JSON rows carried by one answer, bare or inside a code fence."""
+
+        def coerce(raw: str) -> list[dict[str, Any]] | None:
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return None
             if isinstance(data, list):
                 return [r for r in data if isinstance(r, dict)]
             if isinstance(data, dict):
                 return [data]
-        except (json.JSONDecodeError, TypeError):
-            pass
+            return None
 
-        # Try extracting JSON from markdown code blocks
+        rows = coerce(text)
+        if rows is not None:
+            return rows
+
         for marker in ("```json", "```"):
             if marker in text:
                 start = text.index(marker) + len(marker)
                 end = text.find("```", start)
                 if end != -1:
-                    snippet = text[start:end].strip()
-                    try:
-                        data = json.loads(snippet)
-                        if isinstance(data, list):
-                            return [r for r in data if isinstance(r, dict)]
-                        if isinstance(data, dict):
-                            return [data]
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                    rows = coerce(text[start:end].strip())
+                    if rows is not None:
+                        return rows
+        return None
+
+    @classmethod
+    def _parse_response(cls, result: Any, agent_name: str | None = None) -> list[dict[str, Any]]:
+        """Extract JSON rows from the agent response text."""
+        texts, thoughts = cls._answer_texts(result)
+        if not texts and not thoughts:
+            return []
+
+        for text in texts:
+            rows = cls._rows_from_text(text)
+            if rows is not None:
+                return rows
 
         # Text was present but no JSON rows could be extracted. Returning []
         # here would render an empty chart with no explanation (the prior
-        # silent-failure symptom). Surface it so the service maps it to 502.
-        preview = text[:300]
+        # silent-failure symptom). Surface it so the service maps it to 502 --
+        # and say what the reader can actually change. Reasoning alone counts
+        # as "the model spoke": it is reported, never swallowed.
+        preview = (texts or thoughts)[0][:300]
+        who = f"Agent {agent_name!r}" if agent_name else "The agent"
         logger.warning(
-            "[AGENT_EXECUTOR] Could not parse agent response as JSON rows; preview=%s",
-            preview,
+            "[AGENT_EXECUTOR] Could not parse agent response as JSON rows (agent=%s); preview=%s",
+            agent_name, preview,
         )
-        raise ValueError(f"Agent returned non-JSON output (preview: {preview!r})")
+        raise ValueError(
+            f"{who} answered with text instead of data rows. An agent chart needs an "
+            "instruction saying what to return: set it on the chart's data source "
+            "(source_options.message). Answer preview: " + repr(preview)
+        )
